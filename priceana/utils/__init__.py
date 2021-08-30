@@ -19,11 +19,11 @@ def validate_date(_date: Union[dt, str]) -> None:
     """Method to validate dates.
 
     Args:
-                                    _date (Union[dt, str]): date to validate
+        _date (Union[dt, str]): date to validate
 
     Raises:
-                                    ValueError: raised if incorrect str format is given
-                                    TypeError: raised if wrong input type is provided
+        ValueError: raised if incorrect str format is given
+        TypeError: raised if wrong input type is provided
     """
     if isinstance(_date, str):
         try:
