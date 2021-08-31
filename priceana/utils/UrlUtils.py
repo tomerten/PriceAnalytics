@@ -2,7 +2,7 @@ import itertools
 from datetime import datetime as dt
 from typing import List, Optional, Union
 
-from ..constants import base_url, query_url, valid_intevals, valid_periods
+from ..constants import base_url, query_url, valid_intervals, valid_periods
 from .DateTimeUtils import clean_start_end_period
 
 

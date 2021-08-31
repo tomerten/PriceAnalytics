@@ -7,6 +7,7 @@ Module priceana.utils
 A module containing various tools used in the package.   
 
 * DateTimeUtils
+* UrlUtils
 
 """
 

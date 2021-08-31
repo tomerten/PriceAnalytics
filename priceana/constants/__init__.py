@@ -57,7 +57,7 @@ all_keys = sorted(daily_keys + weekly_keys + monthly_keys + quarterly_keys + yea
 # ORDER IS IMPORTANT AS IT IS USED TO CHECK IF DATA IS AVAILABLE FOR THIS PERIOD
 valid_periods = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]
 
-valid_intevals = [
+valid_intervals = [
     "1m",
     "2m",
     "5m",
