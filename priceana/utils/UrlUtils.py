@@ -102,7 +102,7 @@ def generate_price_params(
 
     # CASE ALL INTERVALS ARE REQUESTED
     else:
-        for interval in valid_intevals[:-1]:
+        for interval in valid_intervals[:-1]:
             # RESTRICT PERIODS IF NECESSARY
             if interval == "1m":
                 if valid_periods.index(_period) < valid_periods.index("5d"):
