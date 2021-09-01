@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+
+"""
+Module priceana.utils.UrlUtils
+=================================================================
+
+A module containing methods for download url generation.
+
+"""
+
 import itertools
 from datetime import datetime as dt
 from typing import List, Optional, Union

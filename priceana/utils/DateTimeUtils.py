@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+
+"""
+Module priceana.utils.DateTimeUtils
+=================================================================
+
+A module containing methods for date validation and cleaning.
+
+"""
+
 import time
 from datetime import datetime as dt
 from typing import Dict, Optional, Union
