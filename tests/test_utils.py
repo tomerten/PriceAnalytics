@@ -4,10 +4,12 @@
 """Tests for `priceana` package."""
 import itertools
 import time
+from datetime import datetime as dt
 
 import priceana.utils
 import pytest
 from priceana.constants import base_url, query_url
+from priceana.utils.DateTimeUtils import clean_start_end_period, validate_date
 from priceana.utils.UrlUtils import (
     generate_combinations,
     generate_price_params,
@@ -26,6 +28,19 @@ def patchtime(monkeypatch):
 
     monkeypatch.setattr(time, "time", mytime)
 
+
+# PATCH TIME MKTIME TO GET FIXED VALUE (time.mktime())
+@pytest.fixture()
+def patchmktime(monkeypatch):
+    def mktime(val):
+        return 100
+
+    monkeypatch.setattr(time, "mktime", mktime)
+
+
+################################################################################
+# TESTS FOR URLUTILS
+################################################################################
 
 all_interval = [
     {"range": "5d", "includePrePost": True, "events": "div,splits", "interval": "1m"},
@@ -347,6 +362,77 @@ def test__generate_combinations___pass():
     expected = list(itertools.product(expected_urls, expected_params))
     actual = generate_combinations(urls, params)
     assert expected == actual
+
+
+################################################################################
+# TESTS FOR DATETIMEUTILS
+################################################################################
+def test__clean_start_end_period___fail():
+    with raises(TypeError):
+        clean_start_end_period()
+
+
+def test__clean_start_end_period___pass(patchtime):
+    params = clean_start_end_period(None, None, None)
+    assert params == {"period1": 0, "period2": 10}
+
+
+def test__clean_start_end_period___period___pass(patchtime):
+    params = clean_start_end_period(None, None, period="1d")
+    assert params == {"range": "1d"}
+
+
+def test__clean_start_end_period___end___fail(patchtime):
+    with raises(ValueError):
+        clean_start_end_period(None, 5, None)
+
+
+def test__clean_start_end_period___end___pass(patchtime, patchmktime):
+    params = clean_start_end_period(None, "2020-01-02", None)
+    assert params == {"period1": 0, "period2": 100}
+
+
+def test__clean_start_end_period___enddt___pass(patchtime, patchmktime):
+    params = clean_start_end_period(None, dt(2020, 1, 2), None)
+    assert params == {"period1": 0, "period2": 100}
+
+
+def test__clean_start_end_period___endtime___pass(patchtime, patchmktime):
+    params = clean_start_end_period(None, dt(2020, 1, 2, 0, 0, 10), None)
+    assert params == {"period1": 0, "period2": 100}
+
+
+def test__clean_start_end_period___start___pass(patchtime, patchmktime):
+    params = clean_start_end_period("2020-01-02", None, None)
+    assert params == {"period1": 100, "period2": 10}
+
+
+def test__clean_start_end_period___startdt___pass(patchtime, patchmktime):
+    params = clean_start_end_period(dt(2020, 1, 2), None, None)
+    assert params == {"period1": 100, "period2": 10}
+
+
+def test__clean_start_end_period___starttime___pass(patchtime, patchmktime):
+    params = clean_start_end_period(dt(2020, 1, 2, 0, 0, 10), None, None)
+    assert params == {"period1": 100, "period2": 10}
+
+
+def test____validate_date___dt___pass():
+    validate_date(dt(2020, 1, 1))
+
+
+def test____validate_date___str___pass():
+    validate_date("2012-02-01")
+
+
+def test___validate_date___fail():
+    with raises(ValueError):
+        validate_date("boe")
+
+
+def test___validate_date___typeerror___fail():
+    with raises(TypeError):
+        validate_date({})
 
 
 # ==============================================================================
