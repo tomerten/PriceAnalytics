@@ -23,6 +23,7 @@ from pymongo import ASCENDING
 from termcolor import colored
 
 from .LoggingUtils import logger
+from .ParseUtils import parse_prices
 
 
 async def fetch(url: str, params: dict, session: ClientSession) -> dict:
@@ -80,3 +81,52 @@ async def bound_fetch(sem: Semaphore, url: str, params: dict, session: ClientSes
     """
     async with sem:
         return await fetch(url, params, session)
+
+
+async def aparse_yahoo_prices(
+    sem: Semaphore, tup: Tuple[str, dict], session: ClientSession
+) -> Tuple[
+    Union[str, None],
+    Union[pd.DataFrame, None],
+    Union[pd.DataFrame, None],
+    Union[pd.DataFrame, None],
+]:
+    """
+    Method to get and clean the yahoo price data.
+
+    Args:
+        - sem (Semaphore): internal counter
+            REF: https://docs.python.org/3/library/asyncio-sync.html#asyncio.Semaphore
+        - tup (Tuple[str, dict]): (url, params)
+        - session (ClientSession): aiohttp client session
+
+    Returns:
+        Tuple[ Union[str, None], Union[pd.DataFrame, None],
+        Union[pd.DataFrame, None],Union[pd.DataFrame, None]]:
+            parsed data as tuple (interval, pricedata, dividends, splits)
+    """
+    try:
+        url, params = tup
+        resp = await bound_fetch(sem, url, params, session)
+        resp = resp["chart"]["result"][0]
+        interval, pricedata, div, split = parse_prices(resp)
+
+        logger.debug(colored(f"{url.split('/')[-1]:8} - interval {interval} - OK", "green"))
+
+        return interval, pricedata, div, split
+
+    except (ClientError, HttpProcessingError) as e:
+        logger.error(
+            "aiohttp exception for %s [%s]: %s",
+            tup[0],
+            getattr(e, "status", None),
+            getattr(e, "message", None),
+        )
+        return None, None, None, None
+    except Exception as e:
+        logger.info(e)
+        # logger.exception(
+        #     "Non-aiohttp exception occured:  %s", getattr(e, "__dict__", {})
+        # )
+        logger.exception(colored(f"{tup[0].split('/')[-1]}", "red"))
+        return None, None, None, None
