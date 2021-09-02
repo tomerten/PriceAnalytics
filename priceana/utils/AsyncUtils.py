@@ -24,7 +24,12 @@ from termcolor import colored
 
 from .DataBroker import DataBrokerMongoDb
 from .LoggingUtils import logger
-from .ParseUtils import generate_database_indices_dict, parse_prices, parse_to_multiindex
+from .ParseUtils import (
+    generate_database_indices_dict,
+    parse_prices,
+    parse_raw_fmt,
+    parse_to_multiindex,
+)
 
 
 async def fetch(url: str, params: dict, session: ClientSession) -> dict:
