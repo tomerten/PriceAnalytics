@@ -182,7 +182,7 @@ def parse_raw_fmt(dc: Union[dict, None]) -> dict:
         This is a recursive method.
 
     Args:
-        - dc(Union[dict, None]): input dictionary to clean
+        - dc (Union[dict, None]): input dictionary to clean
 
     Returns:
         dict: cleaned dictionary
@@ -273,6 +273,16 @@ def parse_to_multiindex(v: Union[dict, None], prefix=tuple()) -> Generator:
 
 
 def parse_from_multiindex(current_symbol: str, gen: Generator) -> dict:
+    """Parsing method to transform multi-index dict generator into a dict with
+    pandas dataframes as values.
+
+    Args:
+        current_symbol (str): ticker symbol
+        gen (Generator): dict generator multi-index
+
+    Returns:
+        dict: keys are data names and values are dataframes with data
+    """
     # FINANCIAL DATA NOT CONTAINING SOME KIND
     # OF DATE REFERENCE NEED MANUAL ADDING OF DATE
     DATEUPDATELIST = [
@@ -452,6 +462,14 @@ indexDict: Dict[str, List[str]] = {
 
 
 def generate_database_indices_dict(dc: Union[dict, None]) -> dict:
+    """Method to generate appropriate index for storing the data in MongoDb.
+
+    Args:
+        dc (Union[dict, None]): D
+
+    Returns:
+        dict: [description]
+    """
     if dc == {} or dc is None:
         return {}
     else:
