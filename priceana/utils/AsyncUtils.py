@@ -178,6 +178,20 @@ async def aparse_raw_yahoo_financial_data(
 async def aparse_multiindex_yahoo_financial_data(
     sem: Semaphore, tup: Tuple[str, dict], session: ClientSession
 ) -> Generator:
+    """Method to async get and transform data into multi-index. Part of
+    stage wise cleaning of the raw data.
+
+    Args:
+        sem (Semaphore): semaphore
+        tup (Tuple[str, dict]): (url, params])
+        session (ClientSession): asynch clientsession instance
+
+    Returns:
+        Generator: multi-index dict
+
+    Yields:
+        Generator: multi-index dict
+    """
     try:
         data = await aparse_raw_yahoo_financial_data(sem, tup, session)
         transformed_financial_data = parse_to_multiindex(data)
