@@ -206,6 +206,16 @@ async def aparse_multiindex_yahoo_financial_data(
 async def aparse_yahoo_financial_data(
     sem: Semaphore, tup: Tuple[str, dict], session: ClientSession
 ) -> dict:
+    """Next step in the data cleaning process for financial data.
+
+    Args:
+        - sem (Semaphore): semphore
+        - tup (Tuple[str, dict]): (url, params)
+        - session (ClientSession): async ClientSession
+
+    Returns:
+        dict: data dict
+    """
     # FINANCIAL DATA NOT CONTAINING SOME KIND
     # OF DATE REFERENCE NEED MANUAL ADDING OF DATE
     DATEUPDATELIST = [
@@ -283,6 +293,15 @@ async def store_yahoo_financial_data(
     databroker: DataBrokerMongoDb,
     dbname: str = "FinData",
 ):
+    """Storing in database step of the data cleaning process.
+
+    Args:
+        - sem (Semaphore): semaphore
+        - tup (Tuple[str, dict]): (url, params)
+        - session (ClientSession): async ClientSession
+        - databroker (DataBrokerMongoDb): MongoDb databroker instance
+        - dbname (str, optional): Name of the database to store in. Defaults to "FinData".
+    """
     findata = await aparse_yahoo_financial_data(sem, tup, session)
     indexdict = generate_database_indices_dict(findata)
 
