@@ -109,3 +109,12 @@ class YahooPrices:
 
         if self._end:
             validate_date(self._end)
+
+    def __repr__(self):
+        return "<tickers> : {}, <period>: {}, <interval>: {}, <start>: {}, <end>: {}, <financialperiod>: {}".format(
+            self._tickers,
+            self._period,
+            self._interval,
+            self._start,
+            self._end,
+        )
