@@ -138,6 +138,91 @@ async def aparse_yahoo_prices(
         return None, None, None, None
 
 
+async def store_yahoo_prices(
+    sem: Semaphore,
+    tup: Tuple[str, dict],
+    session: ClientSession,
+    databroker: DataBrokerMongoDb,
+    dbname: str = "FinData",
+):
+    """
+    Method to get, clean and store (mongodb via DataBroker) the yahoo price data.
+
+    Args:
+        - sem: internal counter https://docs.python.org/3/library/asyncio-sync.html#asyncio.Semaphore
+        - tup: (url, params)
+        - session: aiohttp client session
+        - databroker: DataBrokerMongoDb instance
+        - dbname: name of the database to write the data to
+
+    """
+    # ASYNC GET AND PARSE DATA
+    interval: Union[str, None] = None
+    prices: Union[pd.DataFrame, None] = None
+    div: Union[pd.DataFrame, None] = None
+    split: Union[pd.DataFrame, None] = None
+    interval, prices, div, split = await aparse_yahoo_prices(sem, tup, session)
+
+    # SET DATABASE INDEX FOR THE DATA
+    index: List[Tuple[str, int]] = [("symbol", ASCENDING), ("date", ASCENDING)]
+
+    if interval is not None:
+        if "h" in interval or ("m" in interval and "mo" not in interval):
+            index = [("symbol", ASCENDING), ("datetime", ASCENDING)]
+
+    if prices is not None:
+        if not prices.empty:
+            try:
+                databroker.save(
+                    prices.reset_index().to_dict(orient="records"),
+                    dbname,
+                    interval,
+                    index,
+                )
+            except ValueError:
+                logger.exception(
+                    colored(
+                        f"Failed saving prices for {tup[0].split('/')[-1]} - interval {interval}"
+                    ),
+                    "red",
+                )
+
+    indexdiv = [("symbol", ASCENDING), ("date", ASCENDING)]
+
+    if div is not None:
+        # STORE DIVIDENDS
+        try:
+            databroker.save(
+                div.reset_index().to_dict(orient="records"),
+                dbname,
+                "Dividends",
+                indexTupleList=indexdiv,
+            )
+        except ValueError:
+            logger.exception(
+                colored(
+                    f"Failed saving dividends for {tup[0].split('/')[-1]} - interval {interval}"
+                ),
+                "red",
+            )
+    if split is not None:
+        # STORE SPLITS
+        try:
+            databroker.save(
+                split.reset_index().to_dict(orient="records"),
+                dbname,
+                "Splits",
+                indexTupleList=indexdiv,
+            )
+        except ValueError:
+            logger.exception(
+                colored(f"Failed saving splits for {tup[0].split('/')[-1]} - interval {interval}"),
+                "red",
+            )
+
+    logger.debug(colored(f'Saving {tup[0].split("/")[-1]:8} - {interval} done !', "green"))
+
+
 async def aparse_raw_yahoo_financial_data(
     sem: Semaphore, tup: Tuple[str, dict], session: ClientSession
 ) -> dict:
