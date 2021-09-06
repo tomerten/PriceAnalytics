@@ -90,8 +90,8 @@ class YahooPrices:
         Private method to assert of
         input is valid.
         """
-        if not isinstance(self._symbollist, list):
-            self._symbollist = [self._symbollist]
+        if not isinstance(self._tickers, list):
+            self._tickers = [self._tickers]
 
         if self._period not in valid_periods:
             raise InvalidPeriodError
@@ -99,8 +99,8 @@ class YahooPrices:
         if self._interval not in valid_intervals:
             raise InvalidIntervalError
 
-        if self._financialperiod not in self.FINPERIOD.keys():
-            raise InvalidPeriodError("Invalid period for financial data!")
+        # if self._financialperiod not in self.FINPERIOD.keys():
+        #   raise InvalidPeriodError("Invalid period for financial data!")
 
         if not isinstance(self._databroker, DataBrokerMongoDb):
             raise TypeError
