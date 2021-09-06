@@ -11,7 +11,7 @@ __version__ = "0.0.0"
 
 import asyncio
 import time
-from asyncio import Semaphore
+from asyncio import Semaphore, futures
 from collections import namedtuple
 from datetime import timedelta
 from typing import List, Tuple
@@ -70,6 +70,7 @@ class YahooPrices:
     def __init__(self, tickers: List[str], databroker: DataBrokerMongoDb, *args, **kwargs):
         self._tickers = tickers
         self._databroker = databroker
+        self._data = None
 
         # PERIOD TO USE FOR THE PRICE DATA
         self._period = kwargs.get("period", "max")
@@ -110,8 +111,43 @@ class YahooPrices:
         if self._end:
             validate_date(self._end)
 
+    @property.getter
+    def data(self):
+        return self._data
+
+    @property.setter
+    def data(self, value):
+        self._data = value
+
+    async def _download(self):
+        # GENERATE URLS AND PARAMETER DICTS FOR PRICE DATA
+        price_urls = generate_price_urls(self._tickers)
+        price_params = generate_price_params(self._period, self._interval, self._start, self._end)
+
+        # GENERATE THE URL-PARAMETER TUPLE COMBINATIONS
+        # FOR BOTH PRICE AND FINANCIAL DATA
+        pricecombinations = generate_combinations(price_urls, price_params)
+
+        sem = Semaphore(1000)
+
+        pricetasks = []
+
+        async with ClientSession() as session:
+            for tup in pricecombinations:
+                task = asyncio.ensure_future(aparse_yahoo_prices(sem, tup, session))
+                pricetasks.append(task)
+
+        await asyncio.gather(*pricetasks)
+
+    def download(self):
+        loop = asyncio.get_event_loop()
+        future = asyncio.ensure_future(self._download())
+        res = loop.run_until_complete(future)
+
+        self.data = res
+
     def __repr__(self):
-        return "<tickers> : {}, <period>: {}, <interval>: {}, <start>: {}, <end>: {}, <financialperiod>: {}".format(
+        return "<tickers> : {}, <period>: {}, <interval>: {}, <start>: {}, <end>: {}".format(
             self._tickers,
             self._period,
             self._interval,
