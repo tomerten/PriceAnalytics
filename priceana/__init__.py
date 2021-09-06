@@ -111,11 +111,11 @@ class YahooPrices:
         if self._end:
             validate_date(self._end)
 
-    @property.getter
+    @property
     def data(self):
         return self._data
 
-    @property.setter
+    @data.setter
     def data(self, value):
         self._data = value
 
