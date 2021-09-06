@@ -21,6 +21,7 @@ from aiohttp.http import HttpProcessingError
 # from FinDataBroker.DataBrokerMongoDb import DataBrokerMongoDb
 from pymongo import ASCENDING
 from termcolor import colored
+from tqdm import tqdm
 
 from .DataBroker import DataBrokerMongoDb
 from .LoggingUtils import logger
