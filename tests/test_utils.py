@@ -4,13 +4,28 @@
 """Tests for `priceana` package."""
 import itertools
 import time
+from asyncio import Semaphore
 from datetime import datetime as dt
 
+import mongomock
 import numpy as np
 import pandas as pd
 import pytest
+from aiohttp import ClientSession
+from asynctest import CoroutineMock, patch
 from pandas.testing import assert_frame_equal
 from priceana.constants import base_url, query_url
+from priceana.utils.AsyncUtils import (
+    aparse_multiindex_yahoo_financial_data,
+    aparse_raw_yahoo_financial_data,
+    aparse_yahoo_financial_data,
+    aparse_yahoo_prices,
+    bound_fetch,
+    fetch,
+    store_yahoo_financial_data,
+    store_yahoo_prices,
+)
+from priceana.utils.DataBroker import DataBrokerMongoDb
 from priceana.utils.DateTimeUtils import clean_start_end_period, validate_date
 from priceana.utils.ParseUtils import (
     generate_database_indices_dict,
@@ -46,6 +61,14 @@ def patchmktime(monkeypatch):
         return 100
 
     monkeypatch.setattr(time, "mktime", mktime)
+
+
+# MOCKING OF MONGODB FOR TESTING
+@pytest.fixture
+def databroker():
+    client = mongomock.MongoClient()
+    broker = DataBrokerMongoDb(client)
+    return broker
 
 
 ################################################################################
@@ -760,32 +783,515 @@ def test___generate_database_indices_dict___pass(dc, expected):
     assert expected == generate_database_indices_dict(dc)
 
 
+################################################################################
+# TESTS FOR ASYNCUTILS
+################################################################################
+
+test_fetch_pass = [([{"a": 1}],), ([{"a": 1, "b": 2}],)]
+
+empty_quote_frame = pd.DataFrame(columns=["open", "high", "low", "close", "adjclose", "volume"])
+pricedc = {
+    "meta": {
+        "symbol": "abc",
+        "exchangeName": "F",
+        "priceHint": 2,
+        "dataGranularity": "1d",
+        "currency": "USD",
+        "exchangeTimezoneName": "America/New_York",
+    },
+    "timestamp": [1583038800, 1585339201],
+    "indicators": {
+        "quote": [
+            {
+                "volume": [1478726800, 51054153],
+                "close": [247.74000549316406, 247.74000549316406],
+                "open": [282.2799987792969, 252.75],
+                "high": [304.0, 255.8699951171875],
+                "low": [212.61000061035156, 247.0500030517578],
+            }
+        ],
+        "adjclose": [{"adjclose": [247.74000549316406, 247.74000549316406]}],
+    },
+}
+priceframe = parse_quotes_as_frame(pricedc)
+
+test_parse_prices_pass: list = [
+    (None, None, None, None, None),
+    ({"chart": {"result": [{}]}}, None, empty_quote_frame, None, None),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        }
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [],
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [1, 2],
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [1, 2],
+                        "indicators": {"quote": None},
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [1, 2],
+                        "indicators": {"quote": {}},
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [1, 2],
+                        "indicators": {"quote": 12},
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "symbol": "abc",
+                            "exchangeName": "F",
+                            "priceHint": 2,
+                            "dataGranularity": "1d",
+                            "currency": "USD",
+                            "exchangeTimezoneName": "America/New_York",
+                        },
+                        "timestamp": [1583038800, 1585339201],
+                        "indicators": {
+                            "quote": [
+                                {
+                                    "volume": [1478726800, 51054153],
+                                    "close": [247.74000549316406, 247.74000549316406],
+                                    "open": [282.2799987792969, 252.75],
+                                    "high": [304.0, 255.8699951171875],
+                                    "low": [212.61000061035156, 247.0500030517578],
+                                }
+                            ],
+                            "adjclose": [{"adjclose": [247.74000549316406, 247.74000549316406]}],
+                        },
+                    }
+                ]
+            }
+        },
+        "1d",
+        priceframe,
+        None,
+        None,
+    ),
+    (
+        {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "currency": None,
+                            "symbol": "AET",
+                            "exchangeName": "YHD",
+                            "instrumentType": "MUTUALFUND",
+                            "firstTradeDate": 1340006400,
+                            "regularMarketTime": 1561759658,
+                            "gmtoffset": -14400,
+                            "timezone": "EDT",
+                            "exchangeTimezoneName": "America/New_York",
+                            "priceHint": 2,
+                            "currentTradingPeriod": {
+                                "pre": {
+                                    "timezone": "EDT",
+                                    "start": 1586419200,
+                                    "end": 1586439000,
+                                    "gmtoffset": -14400,
+                                },
+                                "regular": {
+                                    "timezone": "EDT",
+                                    "start": 1586439000,
+                                    "end": 1586462400,
+                                    "gmtoffset": -14400,
+                                },
+                                "post": {
+                                    "timezone": "EDT",
+                                    "start": 1586462400,
+                                    "end": 1586476800,
+                                    "gmtoffset": -14400,
+                                },
+                            },
+                            "dataGranularity": "1d",
+                            "range": "5d",
+                            "validRanges": [
+                                "1mo",
+                                "3mo",
+                                "6mo",
+                                "ytd",
+                                "1y",
+                                "2y",
+                                "5y",
+                                "10y",
+                                "max",
+                            ],
+                        },
+                        "indicators": {"quote": [{}], "adjclose": [{}]},
+                    }
+                ]
+            }
+        },
+        "1d",
+        empty_quote_frame,
+        None,
+        None,
+    ),
+]
+
+test_aparse_raw_yahoo_financial_data_pass: list = [
+    ({}, {}),
+    (None, {}),
+    (
+        {"quoteSummary": {"result": [{"test": {"raw": 100, "fmt": "1k"}}]}},
+        {"test": 100.0},
+    ),
+    (
+        {"quoteSummary": {"result": [{"date": {"raw": 100, "fmt": "2020-01-01"}}]}},
+        {"date": "2020-01-01"},
+    ),
+    (
+        {"quoteSummary": {"result": [{"lastfiscalYearEnd": {"raw": 100, "fmt": "2020-01-01"}}]}},
+        {"lastfiscalYearEnd": "2020-01-01"},
+    ),
+    (
+        {"quoteSummary": {"result": [{"nextfiscalYearEnd": {"raw": 100, "fmt": "2020-01-01"}}]}},
+        {"nextfiscalYearEnd": "2020-01-01"},
+    ),
+    (
+        {"quoteSummary": {"result": [{"mostrecentQuarter": {"raw": 100, "fmt": "2020-01-01"}}]}},
+        {"mostrecentQuarter": "2020-01-01"},
+    ),
+    (
+        {"quoteSummary": {"result": [{"testpercent": {"raw": 100, "fmt": "100%"}}]}},
+        {"testpercent": 100.0},
+    ),
+    (
+        {"quoteSummary": {"result": [{"nexttest": {"test": {"raw": 100, "fmt": "1k"}}}]}},
+        {"nexttest": {"test": 100.0}},
+    ),
+    (
+        {"quoteSummary": {"result": [{"nexttest": [{"test": {"raw": 100, "fmt": "1k"}}]}]}},
+        {"nexttest": [{"test": 100.0}]},
+    ),
+]
+
+test_aparse_raw_yahoo_financial_data_fail: list = [(None, {}), ({}, {})]
+
+test_aparse_transform_pass: list = [
+    ({}, []),
+    (None, []),
+    (
+        {
+            "quoteSummary": {
+                "result": [{"test": {"raw": 100, "fmt": "1k"}, "test2": {"raw": 1, "fmt": "1"}}]
+            }
+        },
+        [{(): {"test": 100, "test2": 1}}],
+    ),
+    (
+        {"quoteSummary": {"result": [{"test": 100, "test2": {"dat0": 1, "dat1": 2}}]}},
+        [{("test2",): {"dat0": 1, "dat1": 2}}, {(): {"test": 100}}],
+    ),
+    (
+        {"quoteSummary": {"result": [{"test": {"data": 100}}]}},
+        [{("test",): {"data": 100.0}}],
+    ),
+    (
+        {"quoteSummary": {"result": [{"test2": {"test": {"data": 100}}}]}},
+        [{("test2", "test"): {"data": 100.0}}],
+    ),
+    ({"quoteSummary": {"result": [[{"a": 1}, {"b": 2}]]}}, []),
+]
+
+test_aparse_yahoo_financial_data_pass: list = [
+    ({}, {}),
+    (None, {}),
+    (
+        {
+            "quoteSummary": {
+                "result": [{"test": {"raw": 100, "fmt": "1k"}, "test2": {"raw": 1, "fmt": "1"}}]
+            }
+        },
+        {"": [{"test": 100.0, "test2": 1.0, "symbol": "example.com"}]},
+    ),
+    (
+        {"quoteSummary": {"result": [{"test": 100, "test2": {"dat0": 1, "dat1": 2}}]}},
+        {
+            "test2": [{"dat0": 1, "dat1": 2, "symbol": "example.com"}],
+            "": [{"test": 100, "symbol": "example.com"}],
+        },
+    ),
+    (
+        {"quoteSummary": {"result": [{"test": {"data": 100}}]}},
+        {"test": [{"data": 100, "symbol": "example.com"}]},
+    ),
+    (
+        {"quoteSummary": {"result": [{"test2": {"test": {"data": 100}}}]}},
+        {"test2_test": [{"data": 100.0, "symbol": "example.com"}]},
+    ),
+    ({"quoteSummary": {"result": [[{"a": 1}, {"b": 2}]]}}, {}),
+]
+
+
+@pytest.mark.parametrize("expected", test_fetch_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___fetch__pass(mock_get, expected):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=expected)
+
+    async with ClientSession() as session:
+        data = await fetch("http://example.com", {}, session)
+
+    assert data == expected[0]
+
+
+@pytest.mark.parametrize("expected", test_fetch_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___bound_fetch___pass(mock_get, expected):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=expected)
+    sem = Semaphore()
+    async with ClientSession() as session:
+        data = await bound_fetch(sem, "http://example.com", {}, session)
+
+    assert data == expected[0]
+
+
+@pytest.mark.parametrize("dc,interval,quotes,div,split", test_parse_prices_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___aparse_yahoo_prices___pass(mock_get, dc, interval, quotes, div, split):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        res = await aparse_yahoo_prices(sem, ("http://example.com", {}), session)
+
+    if res is not None:
+        i, q, d, s = res
+        print(q)
+        assert interval == i
+        if q is not None:
+            assert_frame_equal(q, quotes)
+        else:
+            assert q is None
+        assert div == d
+        assert split == s
+    else:
+        assert res is None
+
+
+@pytest.mark.parametrize("dc,interval,quotes,div,split", [test_parse_prices_pass[-2]])
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___store_yahoo_prices___pass(mock_get, dc, interval, quotes, div, split, databroker):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        await store_yahoo_prices(
+            sem,
+            ("http://example.com", {}),
+            session,
+            databroker=databroker,
+            dbname="FinDataTest",
+        )
+
+    assert databroker.client.list_database_names() == ["FinDataTest"]
+    assert databroker.client["FinDataTest"].list_collection_names() == ["1d"]
+
+    # clean up
+    databroker.client.drop_database("FinDataTest")
+
+
+@pytest.mark.parametrize("dc, expeceted", test_aparse_raw_yahoo_financial_data_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___aparse_raw_yahoo_financial_data___pass(mock_get, dc, expeceted):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        res = await aparse_raw_yahoo_financial_data(sem, ("http://example.com", {}), session)
+
+    assert res == expeceted
+
+
+@pytest.mark.parametrize("dc, expected", test_aparse_raw_yahoo_financial_data_fail)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___aparse_raw_yahoo_financial_data___fail(mock_get, dc, expected):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        res = await aparse_raw_yahoo_financial_data(sem, ("http://example.com", {}), session)
+
+    assert res == {}
+
+
+@pytest.mark.parametrize("dc, expected", test_aparse_transform_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___aparse_multiindex_yahoo_financial_data___pass(mock_get, dc, expected):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        res = await aparse_multiindex_yahoo_financial_data(
+            sem, ("http://example.com", {}), session
+        )
+
+    assert list(res) == expected
+
+
+@pytest.mark.parametrize("dc, expected", test_aparse_yahoo_financial_data_pass)
+@pytest.mark.asyncio
+@patch("aiohttp.ClientSession.get")
+async def test___aparse_yahoo_financial_data___pass(mock_get, dc, expected):
+    mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+    sem = Semaphore()
+    async with ClientSession() as session:
+        res = await aparse_yahoo_financial_data(sem, ("http://example.com", {}), session)
+
+    print(res)
+    assert res == expected
+
+
+# @pytest.mark.parametrize("dc", test_store_yahoo_financial_data_pass)
+# @pytest.mark.asyncio
+# @patch("aiohttp.ClientSession.get")
+# async def test___store_yahoo_financial_data___pass(mock_get, dc, databroker):
+#     mock_get.return_value.__aenter__.return_value.json = CoroutineMock(side_effect=[dc])
+#     sem = Semaphore()
+#     async with ClientSession() as session:
+#         # res = await aparse_yahoo_financial_data(sem, ('http://example.com', {}), session)
+#         await store_yahoo_financial_data(
+#             sem,
+#             ("http://example.com", {}),
+#             session,
+#             databroker=databroker,
+#             dbname="FinDataTest",
+#         )
 #
-# def test___generate_db_indices_reportDate_organization___pass():
-#     data = {
-#         "test": [
-#             {
-#                 "symbol": "abc",
-#                 "reportDate": "2020-01-01",
-#                 "organization": "org1",
-#                 "val": 1,
-#             },
-#             {
-#                 "symbol": "abc",
-#                 "reportDate": "2020-01-02",
-#                 "organization": "org1",
-#                 "val": 1,
-#             },
-#             {
-#                 "symbol": "abc",
-#                 "reportDate": "2020-01-03",
-#                 "organization": "org2",
-#                 "val": 1,
-#             },
-#         ]
-#     }
-#     idx = yd._generate_db_indices(data)
-#     assert idx == {"test": [("symbol", 1), ("reportDate", 1), ("organization", 1)]}
+#     # print(res)
+#     assert databroker.client.list_database_names() == ["FinDataTest"]
+#     assert databroker.client["FinDataTest"].list_collection_names() == ["test"]
+#
+#     # clean up
+#     databroker.client.drop_database("FinDataTest")
 
 
 # ==============================================================================
