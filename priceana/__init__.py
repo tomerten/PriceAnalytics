@@ -14,6 +14,7 @@ import time
 from asyncio import Semaphore, futures
 from collections import namedtuple
 from datetime import timedelta
+from re import I
 from typing import List, Tuple
 
 from aiohttp import ClientSession
@@ -137,13 +138,14 @@ class YahooPrices:
                 task = asyncio.ensure_future(aparse_yahoo_prices(sem, tup, session))
                 pricetasks.append(task)
 
-        await asyncio.gather(*pricetasks)
+            res = await asyncio.gather(*pricetasks)
+        return res
 
     def download(self):
         loop = asyncio.get_event_loop()
         future = asyncio.ensure_future(self._download())
         res = loop.run_until_complete(future)
-
+        print(res)
         self.data = res
 
     def __repr__(self):
