@@ -145,7 +145,6 @@ class YahooPrices:
         loop = asyncio.get_event_loop()
         future = asyncio.ensure_future(self._download())
         res = loop.run_until_complete(future)
-        print(res)
         self.data = res
 
     def __repr__(self):
