@@ -114,6 +114,7 @@ async def aparse_yahoo_prices(
     """
     try:
         url, params = tup
+        print(url, params)
         resp = await bound_fetch(sem, url, params, session)
         resp = resp["chart"]["result"][0]
         interval, pricedata, div, split = parse_prices(resp)
