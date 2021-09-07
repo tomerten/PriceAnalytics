@@ -12,3 +12,7 @@ API
 .. automodule:: priceana.utils
    :members:
 
+
+.. automodule:: priceana.tradingstrategies
+   :members:
+
